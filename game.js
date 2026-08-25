@@ -28,6 +28,10 @@ const PIECES = [
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
+const STORAGE_KEY_LEVEL = 'tetris.startLevel'; // number 1..15
+const MIN_START_LEVEL = 1;
+const MAX_START_LEVEL = 15;
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -40,7 +44,20 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 
+const pauseMenu = document.getElementById('pause-menu');
+const menuViews = {
+  main: document.getElementById('menu-view-main'),
+  controls: document.getElementById('menu-view-controls'),
+  level: document.getElementById('menu-view-level'),
+};
+const menuLevelCurrent = document.getElementById('menu-level-current');
+const levelGrid = document.getElementById('level-grid');
+
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let menuOpen = false;
+let menuView = 'main';
+let startLevel = 1;     // pending preference, applies to the next game
+let gameStartLevel = 1; // level the running game was started at
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -106,7 +123,7 @@ function clearLines() {
   if (cleared) {
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level;
-    level = Math.floor(lines / 10) + 1;
+    level = gameStartLevel + Math.floor(lines / 10);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
@@ -226,18 +243,146 @@ function endGame() {
   overlay.classList.remove('hidden');
 }
 
+/* ---- Start level persistence ---- */
+
+function clampStartLevel(n) {
+  if (!Number.isFinite(n)) return MIN_START_LEVEL;
+  return Math.min(MAX_START_LEVEL, Math.max(MIN_START_LEVEL, Math.floor(n)));
+}
+
+function loadStartLevel() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_LEVEL);
+    if (raw === null) return MIN_START_LEVEL;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) return MIN_START_LEVEL;
+    return clampStartLevel(n);
+  } catch (err) {
+    // localStorage unavailable (private mode, file://) - fall back to default
+    return MIN_START_LEVEL;
+  }
+}
+
+function saveStartLevel(n) {
+  try {
+    localStorage.setItem(STORAGE_KEY_LEVEL, String(n));
+  } catch (err) {
+    // ignore - keep the in-memory value only
+  }
+}
+
+/* ---- Pause menu ---- */
+
+function buildLevelGrid() {
+  levelGrid.textContent = '';
+  for (let n = MIN_START_LEVEL; n <= MAX_START_LEVEL; n++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'level-btn';
+    btn.textContent = String(n);
+    btn.dataset.level = String(n);
+    btn.addEventListener('click', () => {
+      startLevel = n;
+      saveStartLevel(n);
+      refreshStartLevelUI();
+      showMenuView('main');
+    });
+    levelGrid.appendChild(btn);
+  }
+}
+
+function refreshStartLevelUI() {
+  menuLevelCurrent.textContent = String(startLevel);
+  for (const btn of levelGrid.children) {
+    const isSelected = Number(btn.dataset.level) === startLevel;
+    btn.classList.toggle('selected', isSelected);
+    btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+  }
+}
+
+function menuButtons() {
+  const view = menuViews[menuView];
+  if (!view) return [];
+  return Array.from(view.querySelectorAll('button'));
+}
+
+function showMenuView(view) {
+  menuView = view;
+  for (const name of Object.keys(menuViews))
+    menuViews[name].classList.toggle('hidden', name !== view);
+  const buttons = menuButtons();
+  if (buttons.length) {
+    let target = buttons[0];
+    if (view === 'level') {
+      const selected = buttons.find(b => Number(b.dataset.level) === startLevel);
+      if (selected) target = selected;
+    }
+    target.focus();
+  }
+}
+
+const LEVEL_COLS = 5;
+
+// Horizontal step: flat wrap over every button in the view.
+function moveMenuFocus(delta) {
+  const buttons = menuButtons();
+  if (!buttons.length) return;
+  const idx = buttons.indexOf(document.activeElement);
+  const nextIdx = idx === -1
+    ? 0
+    : (idx + delta + buttons.length) % buttons.length;
+  buttons[nextIdx].focus();
+}
+
+// Vertical step: one grid row in the level view, one button elsewhere.
+function moveMenuFocusVertical(delta) {
+  if (menuView !== 'level') {
+    moveMenuFocus(delta);
+    return;
+  }
+  const buttons = menuButtons();
+  if (!buttons.length) return;
+  const count = MAX_START_LEVEL - MIN_START_LEVEL + 1; // level buttons
+  const backIdx = buttons.length - 1;                  // "Volver"
+  const idx = buttons.indexOf(document.activeElement);
+  let nextIdx;
+  if (idx === -1 || idx >= count) {
+    // on "Volver": down wraps to the first level, up to the last row
+    nextIdx = delta > 0 ? 0 : count - LEVEL_COLS;
+  } else {
+    nextIdx = idx + delta * LEVEL_COLS;
+    if (nextIdx < 0 || nextIdx >= count) nextIdx = backIdx;
+  }
+  buttons[nextIdx].focus();
+}
+
+function openMenu() {
+  if (gameOver || menuOpen) return;
+  menuOpen = true;
+  paused = true;
+  cancelAnimationFrame(animId);
+  draw();
+  refreshStartLevelUI();
+  pauseMenu.classList.remove('hidden');
+  showMenuView('main');
+}
+
+function closeMenu() {
+  if (!menuOpen) return;
+  menuOpen = false;
+  paused = false;
+  pauseMenu.classList.add('hidden');
+  // re-prime timing so no accumulated drop fires on resume
+  lastTime = performance.now();
+  dropAccum = 0;
+  cancelAnimationFrame(animId);
+  animId = requestAnimationFrame(loop);
+}
+
 function togglePause() {
   if (gameOver) return;
-  paused = !paused;
-  if (!paused) {
-    lastTime = performance.now();
-    loop(lastTime);
-  } else {
-    cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
-  }
+  if (menuOpen) closeMenu();
+  else openMenu();
 }
 
 function loop(ts) {
@@ -257,26 +402,74 @@ function loop(ts) {
 }
 
 function init() {
+  // startLevel is loaded once at boot and kept in memory afterwards, so a
+  // selection survives a restart even when localStorage writes are blocked.
+  gameStartLevel = startLevel;
   board = createBoard();
   score = 0;
   lines = 0;
-  level = 1;
+  level = gameStartLevel;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  menuOpen = false;
+  menuView = 'main';
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
   updateHUD();
+  refreshStartLevelUI();
   overlay.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (menuOpen) {
+    switch (e.code) {
+      case 'Escape':
+        e.preventDefault();
+        if (menuView === 'main') closeMenu();
+        else showMenuView('main');
+        break;
+      case 'KeyP':
+        e.preventDefault();
+        togglePause();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        moveMenuFocusVertical(-1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        moveMenuFocusVertical(1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveMenuFocus(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        moveMenuFocus(1);
+        break;
+      case 'Space':
+        // prevent page scroll; activate the focused button ourselves
+        e.preventDefault();
+        if (document.activeElement && typeof document.activeElement.click === 'function')
+          document.activeElement.click();
+        break;
+      // Enter falls through to the browser's native button activation
+    }
+    return;
+  }
+  if (e.code === 'KeyP') { e.preventDefault(); togglePause(); return; }
+  if (e.code === 'Escape') { e.preventDefault(); openMenu(); return; }
   if (paused || gameOver) return;
+  // ignore auto-repeat on Space so holding it to activate a menu button
+  // does not slam the piece down the instant the menu closes
+  if (e.code === 'Space' && e.repeat) { e.preventDefault(); return; }
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) current.x--;
@@ -301,4 +494,13 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 
+document.getElementById('menu-resume').addEventListener('click', closeMenu);
+document.getElementById('menu-restart').addEventListener('click', init);
+document.getElementById('menu-controls').addEventListener('click', () => showMenuView('controls'));
+document.getElementById('menu-level').addEventListener('click', () => showMenuView('level'));
+document.getElementById('menu-back-controls').addEventListener('click', () => showMenuView('main'));
+document.getElementById('menu-back-level').addEventListener('click', () => showMenuView('main'));
+
+buildLevelGrid();
+startLevel = loadStartLevel();
 init();
