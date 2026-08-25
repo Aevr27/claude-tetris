@@ -38,6 +38,7 @@
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
             <li><kbd>P</kbd> pausa</li>
+            <li><kbd>Esc</kbd> menú</li>
           </ul>
         </div>
       </aside>
@@ -48,6 +49,40 @@
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
         <button id="restart-btn">Reiniciar</button>
+      </div>
+    </div>
+
+    <div id="pause-menu" class="overlay hidden">
+      <div class="menu-box">
+        <p class="menu-title">PAUSA</p>
+
+        <div id="menu-view-main" class="menu-view">
+          <button class="menu-btn" id="menu-resume">Reanudar</button>
+          <button class="menu-btn" id="menu-restart">Reiniciar</button>
+          <button class="menu-btn" id="menu-controls">Ver controles</button>
+          <button class="menu-btn" id="menu-level">Nivel inicial</button>
+          <p class="menu-hint">Nivel inicial actual: <span id="menu-level-current">1</span></p>
+        </div>
+
+        <div id="menu-view-controls" class="menu-view hidden">
+          <p class="menu-subtitle">Controles</p>
+          <ul class="menu-list">
+            <li><kbd>←</kbd><kbd>→</kbd><span>Mover pieza</span></li>
+            <li><kbd>↑</kbd><kbd>X</kbd><span>Rotar</span></li>
+            <li><kbd>↓</kbd><span>Bajar rápido</span></li>
+            <li><kbd>Space</kbd><span>Caída instantánea</span></li>
+            <li><kbd>P</kbd><span>Pausa / reanudar</span></li>
+            <li><kbd>Esc</kbd><span>Menú / volver</span></li>
+          </ul>
+          <button class="menu-btn" id="menu-back-controls">Volver</button>
+        </div>
+
+        <div id="menu-view-level" class="menu-view hidden">
+          <p class="menu-subtitle">Nivel inicial</p>
+          <p class="menu-hint">Se aplica a la próxima partida.</p>
+          <div class="level-grid" id="level-grid"></div>
+          <button class="menu-btn" id="menu-back-level">Volver</button>
+        </div>
       </div>
     </div>
   </div>
