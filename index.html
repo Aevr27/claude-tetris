@@ -48,6 +48,35 @@
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
         <button id="restart-btn">Reiniciar</button>
+        <button id="home-btn" class="secondary-btn hidden">Inicio</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="start-screen" class="start-screen">
+    <div class="start-box">
+      <h1 class="start-title">TETRIS</h1>
+
+      <div class="start-section">
+        <span class="label">RECORDS</span>
+        <div id="score-table"></div>
+      </div>
+
+      <div class="start-stats">
+        <div class="stat">
+          <span class="label">MEJOR COMBO</span>
+          <span class="stat-value" id="best-combo">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">LÍNEAS MÁXIMAS</span>
+          <span class="stat-value" id="max-lines">0</span>
+        </div>
+      </div>
+
+      <div class="start-actions">
+        <button id="play-btn">Jugar</button>
+        <button id="reset-records-btn" class="secondary-btn">Resetear records</button>
+        <button id="cancel-reset-btn" class="secondary-btn hidden">Cancelar</button>
       </div>
     </div>
   </div>
