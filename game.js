@@ -4,16 +4,35 @@ const COLS = 10;
 const ROWS = 20;
 const BLOCK = 30;
 
-const COLORS = [
-  null,
-  '#4dd0e1', // I - cyan
-  '#ffd54f', // O - yellow
-  '#ba68c8', // T - purple
-  '#81c784', // S - green
-  '#e57373', // Z - red
-  '#7986cb', // J - indigo
-  '#ffb74d', // L - orange
-];
+// localStorage keys (shared across features)
+const STORAGE_KEY_SKIN = 'tetris.skin'; // 'retro' | 'neon' | 'pastel' | 'pixel'
+
+// Theme palettes. `colors` is index-aligned with PIECES (null at index 0).
+const THEMES = {
+  retro: {
+    name: 'Retro',
+    colors: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#7986cb', '#ffb74d'],
+    bg: '#1a1a25', grid: '#22222e', glow: 0, radius: 0, texture: false,
+  },
+  neon: {
+    name: 'Neon',
+    colors: [null, '#00f0ff', '#fff700', '#f000ff', '#00ff5f', '#ff0040', '#3d5afe', '#ff9100'],
+    bg: '#000000', grid: '#1a1a2e', glow: 12, radius: 0, texture: false,
+  },
+  pastel: {
+    name: 'Pastel',
+    colors: [null, '#a8e6ef', '#ffe9a8', '#e0bbe4', '#b5e7c0', '#ffb3b3', '#b8c0f0', '#ffd6a5'],
+    bg: '#2a2a35', grid: '#33333f', glow: 0, radius: 6, texture: false,
+  },
+  pixel: {
+    name: 'Pixel',
+    colors: [null, '#2ec4b6', '#ffbf00', '#9b5de5', '#4cb944', '#e63946', '#3a86ff', '#fb8500'],
+    bg: '#141420', grid: '#252533', glow: 0, radius: 0, texture: true,
+  },
+};
+
+const DEFAULT_THEME_KEY = 'retro';
+let currentTheme = THEMES[DEFAULT_THEME_KEY];
 
 const PIECES = [
   null,
@@ -39,6 +58,7 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const skinSelector = document.getElementById('skin-selector');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 
@@ -156,9 +176,65 @@ function updateHUD() {
   levelEl.textContent = level;
 }
 
+/* ---- Themes: persistence, application and selector ---- */
+
+function loadSkin() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_SKIN);
+    if (stored && Object.prototype.hasOwnProperty.call(THEMES, stored)) return stored;
+  } catch (err) {
+    // localStorage unavailable (private mode / file://) - fall back to default
+  }
+  return DEFAULT_THEME_KEY;
+}
+
+function saveSkin(key) {
+  try {
+    localStorage.setItem(STORAGE_KEY_SKIN, key);
+  } catch (err) {
+    // Ignore: degrade silently to in-memory only
+  }
+}
+
+function applyTheme(key) {
+  const themeKey = Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME_KEY;
+  currentTheme = THEMES[themeKey];
+  document.body.dataset.theme = themeKey;
+  updateSkinSelector(themeKey);
+  // Force an immediate repaint so the change is visible even while paused.
+  if (next) drawNext();
+  if (current) draw();
+  return themeKey;
+}
+
+function updateSkinSelector(themeKey) {
+  if (!skinSelector) return;
+  for (const btn of skinSelector.querySelectorAll('.skin-btn')) {
+    const isActive = btn.dataset.skin === themeKey;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
+  }
+}
+
+function setSkin(key) {
+  const themeKey = applyTheme(key);
+  saveSkin(themeKey);
+}
+
+function initSkinSelector() {
+  if (!skinSelector) return;
+  skinSelector.addEventListener('click', e => {
+    const btn = e.target.closest('.skin-btn');
+    if (!btn || !skinSelector.contains(btn)) return;
+    setSkin(btn.dataset.skin);
+    // Release focus so Space/arrows reach the game, not the button.
+    btn.blur();
+  });
+}
+
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const color = currentTheme.colors[colorIndex];
   context.globalAlpha = alpha ?? 1;
   context.fillStyle = color;
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
@@ -169,7 +245,7 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = currentTheme.grid;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -187,6 +263,8 @@ function drawGrid() {
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = currentTheme.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawGrid();
 
   // board
@@ -210,6 +288,8 @@ function draw() {
 function drawNext() {
   const NB = 30;
   nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  nextCtx.fillStyle = currentTheme.bg;
+  nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
   const shape = next.shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
@@ -275,6 +355,8 @@ function init() {
 }
 
 document.addEventListener('keydown', e => {
+  // Let the skin buttons handle their own keyboard activation (Space / Enter).
+  if (e.target instanceof Element && e.target.closest('#skin-selector')) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -301,4 +383,6 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 
+initSkinSelector();
+applyTheme(loadSkin());
 init();
