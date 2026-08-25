@@ -47,6 +47,151 @@ const PIECES = [
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
+// ---- Persistence (localStorage) ----
+const STORAGE_KEY_SCORES = 'tetris.highscores'; // Array<{name, score, lines, level, date}>, max 5, desc by score
+const STORAGE_KEY_STATS = 'tetris.stats';       // {bestCombo, maxLines}
+
+const MAX_SCORES = 5;
+const MAX_NAME_LENGTH = 10;
+const DEFAULT_NAME = 'JUGADOR';
+
+// In-memory fallbacks used when localStorage is unavailable (private mode, file://)
+// or when a write fails (quota exceeded) and stored data is therefore stale.
+let memoryScores = null;
+let memoryStats = null;
+let scoresWriteFailed = false;
+let statsWriteFailed = false;
+
+function readStorage(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function removeStorage(key) {
+  try {
+    window.localStorage.removeItem(key);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function sanitizeName(value) {
+  const name = String(value == null ? '' : value).trim().slice(0, MAX_NAME_LENGTH);
+  return name || DEFAULT_NAME;
+}
+
+function toFiniteInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function isValidEntry(entry) {
+  return !!entry && typeof entry === 'object' && Number.isFinite(Number(entry.score));
+}
+
+function normalizeEntry(entry) {
+  return {
+    name: sanitizeName(entry.name),
+    score: toFiniteInt(entry.score, 0),
+    lines: toFiniteInt(entry.lines, 0),
+    level: toFiniteInt(entry.level, 1),
+    date: typeof entry.date === 'string' ? entry.date : new Date().toISOString(),
+  };
+}
+
+function loadScores() {
+  const raw = readStorage(STORAGE_KEY_SCORES);
+  // Prefer the in-memory copy when storage is unavailable or known to be stale.
+  if (raw === null || scoresWriteFailed) {
+    if (memoryScores) return memoryScores.map(e => ({ ...e }));
+    if (raw === null) return [];
+  }
+  const stale = memoryScores ? memoryScores.map(e => ({ ...e })) : [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return stale;
+    return parsed
+      .filter(isValidEntry)
+      .map(normalizeEntry)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_SCORES);
+  } catch (err) {
+    return stale;
+  }
+}
+
+// Inserts the entry in descending score order and truncates to the top 5.
+// Returns the index of the stored entry, or -1 if it did not make the table.
+function saveScore(entry) {
+  const item = normalizeEntry(entry || {});
+  const list = loadScores();
+  let index = list.findIndex(e => item.score > e.score);
+  if (index === -1) index = list.length;
+  list.splice(index, 0, item);
+  const trimmed = list.slice(0, MAX_SCORES);
+  if (index >= MAX_SCORES) index = -1;
+  memoryScores = trimmed.map(e => ({ ...e }));
+  if (!writeStorage(STORAGE_KEY_SCORES, JSON.stringify(trimmed))) scoresWriteFailed = true;
+  return index;
+}
+
+function qualifiesForTop(value) {
+  if (!(value > 0)) return false;
+  const list = loadScores();
+  return list.length < MAX_SCORES || value > list[list.length - 1].score;
+}
+
+function loadStats() {
+  const fallback = memoryStats ? { ...memoryStats } : { bestCombo: 0, maxLines: 0 };
+  const raw = readStorage(STORAGE_KEY_STATS);
+  if (raw === null || statsWriteFailed) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+    return {
+      bestCombo: Math.max(0, toFiniteInt(parsed.bestCombo, 0)),
+      maxLines: Math.max(0, toFiniteInt(parsed.maxLines, 0)),
+    };
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function updateStats(run) {
+  const stats = loadStats();
+  const runCombo = Math.max(0, toFiniteInt(run && run.combo, 0));
+  const runLines = Math.max(0, toFiniteInt(run && run.lines, 0));
+  const updated = {
+    bestCombo: Math.max(stats.bestCombo, runCombo),
+    maxLines: Math.max(stats.maxLines, runLines),
+  };
+  memoryStats = { ...updated };
+  if (!writeStorage(STORAGE_KEY_STATS, JSON.stringify(updated))) statsWriteFailed = true;
+  return updated;
+}
+
+function resetRecords() {
+  memoryScores = [];
+  memoryStats = { bestCombo: 0, maxLines: 0 };
+  scoresWriteFailed = false;
+  statsWriteFailed = false;
+  removeStorage(STORAGE_KEY_SCORES);
+  removeStorage(STORAGE_KEY_STATS);
+}
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -59,8 +204,15 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const skinSelector = document.getElementById('skin-selector');
+const nameEntry = document.getElementById('name-entry');
+const nameInput = document.getElementById('name-input');
+const saveScoreBtn = document.getElementById('save-score-btn');
+const scoresPanel = document.getElementById('scores-panel');
+const scoresTable = document.getElementById('scores-table');
+const statsLine = document.getElementById('stats-line');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let combo, bestCombo, scoreCommitted;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -130,6 +282,7 @@ function clearLines() {
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
+  return cleared;
 }
 
 function ghostY() {
@@ -157,7 +310,13 @@ function softDrop() {
 
 function lockPiece() {
   merge();
-  clearLines();
+  const cleared = clearLines();
+  if (cleared > 0) {
+    combo++;
+    if (combo > bestCombo) bestCombo = combo;
+  } else {
+    combo = 0;
+  }
   spawn();
 }
 
@@ -298,12 +457,102 @@ function drawNext() {
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
 }
 
+// Paints the top-5 table into containerEl. highlightIndex marks one row (-1 for none).
+// Built with textContent only: names come from localStorage and must never be HTML.
+function renderScoreTable(containerEl, highlightIndex) {
+  if (!containerEl) return;
+  containerEl.textContent = '';
+  const entries = loadScores();
+
+  const table = document.createElement('table');
+  table.className = 'score-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  ['#', 'Nombre', 'Puntuación', 'Líneas', 'Nivel'].forEach(text => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  if (entries.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.className = 'score-empty';
+    cell.textContent = 'Sin récords todavía';
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  } else {
+    entries.forEach((entry, i) => {
+      const row = document.createElement('tr');
+      if (i === highlightIndex) row.classList.add('highlight');
+      [
+        String(i + 1),
+        entry.name,
+        entry.score.toLocaleString(),
+        String(entry.lines),
+        String(entry.level),
+      ].forEach(text => {
+        const td = document.createElement('td');
+        td.textContent = text;
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+  }
+  table.appendChild(tbody);
+  containerEl.appendChild(table);
+}
+
+function renderStatsLine() {
+  const stats = loadStats();
+  statsLine.textContent = `Mejor combo: ${stats.bestCombo} · Líneas máximas: ${stats.maxLines}`;
+}
+
+function commitScore() {
+  if (scoreCommitted) return;
+  scoreCommitted = true;
+  const index = saveScore({
+    name: sanitizeName(nameInput.value),
+    score,
+    lines,
+    level,
+    date: new Date().toISOString(),
+  });
+  nameEntry.classList.add('hidden');
+  renderScoreTable(scoresTable, index);
+}
+
 function endGame() {
+  if (gameOver) return;
   gameOver = true;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+
+  updateStats({ combo: bestCombo, lines });
+
+  const qualifies = qualifiesForTop(score);
+  renderScoreTable(scoresTable, -1);
+  renderStatsLine();
+  scoresPanel.classList.remove('hidden');
+
+  if (qualifies) {
+    nameInput.value = DEFAULT_NAME;
+    nameEntry.classList.remove('hidden');
+  } else {
+    nameEntry.classList.add('hidden');
+  }
+
   overlay.classList.remove('hidden');
+  if (qualifies) {
+    nameInput.focus();
+    nameInput.select();
+  }
 }
 
 function togglePause() {
@@ -316,11 +565,14 @@ function togglePause() {
     cancelAnimationFrame(animId);
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
+    nameEntry.classList.add('hidden');
+    scoresPanel.classList.add('hidden');
     overlay.classList.remove('hidden');
   }
 }
 
 function loop(ts) {
+  if (gameOver || paused) return;
   const dt = ts - lastTime;
   lastTime = ts;
   dropAccum += dt;
@@ -345,18 +597,34 @@ function init() {
   gameOver = false;
   dropInterval = 1000;
   dropAccum = 0;
+  combo = 0;
+  bestCombo = 0;
+  scoreCommitted = false;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
   updateHUD();
+  nameEntry.classList.add('hidden');
+  scoresPanel.classList.add('hidden');
   overlay.classList.add('hidden');
+  // Keep focus off the button: a focused <button> also fires on Space (hard drop).
+  restartBtn.blur();
+  saveScoreBtn.blur();
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable === true;
 }
 
 document.addEventListener('keydown', e => {
   // Let the skin buttons handle their own keyboard activation (Space / Enter).
   if (e.target instanceof Element && e.target.closest('#skin-selector')) return;
+  // While the name field is focused, typing is text entry, not game input.
+  if (isTypingTarget(e.target)) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -379,6 +647,15 @@ document.addEventListener('keydown', e => {
       break;
   }
   updateHUD();
+});
+
+saveScoreBtn.addEventListener('click', commitScore);
+
+nameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitScore();
+  }
 });
 
 restartBtn.addEventListener('click', init);
