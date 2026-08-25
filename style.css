@@ -4,15 +4,117 @@
   padding: 0;
 }
 
+/* ---- Theme tokens: `retro` is the default set ---- */
+:root {
+  --page-bg: #0f0f17;
+  --page-text: #e0e0e0;
+  --canvas-bg: #1a1a25;
+  --canvas-border: #2a2a3a;
+  --canvas-radius: 4px;
+  --label-color: #555570;
+  --hud-accent: #7aa2f7;
+  --control-text: #888888;
+  --kbd-bg: #22223a;
+  --kbd-border: #3a3a5a;
+  --kbd-text: #aaaaaa;
+  --btn-bg: #22223a;
+  --btn-border: #3a3a5a;
+  --btn-text: #aaaaaa;
+  --btn-active-bg: #7aa2f7;
+  --btn-active-text: #0f0f17;
+  --primary-btn-bg: #7aa2f7;
+  --primary-btn-hover: #9bbdff;
+  --primary-btn-text: #0f0f17;
+  --overlay-bg: rgba(10, 10, 20, 0.75);
+  --overlay-title: #e57373;
+}
+
+body[data-theme="neon"] {
+  --page-bg: #05050a;
+  --page-text: #f0f0ff;
+  --canvas-bg: #000000;
+  --canvas-border: #ff00c8;
+  --canvas-radius: 4px;
+  --label-color: #ff00c8;
+  --hud-accent: #00f0ff;
+  --control-text: #9a9ac8;
+  --kbd-bg: #12002a;
+  --kbd-border: #7a00ff;
+  --kbd-text: #00f0ff;
+  --btn-bg: #12002a;
+  --btn-border: #7a00ff;
+  --btn-text: #00f0ff;
+  --btn-active-bg: #ff00c8;
+  --btn-active-text: #05050a;
+  --primary-btn-bg: #00f0ff;
+  --primary-btn-hover: #6bfaff;
+  --primary-btn-text: #05050a;
+  --overlay-bg: rgba(5, 0, 20, 0.8);
+  --overlay-title: #ff0040;
+}
+
+body[data-theme="pastel"] {
+  --page-bg: #21212b;
+  --page-text: #f2eef6;
+  --canvas-bg: #2a2a35;
+  --canvas-border: #4b4b5c;
+  --canvas-radius: 10px;
+  --label-color: #9a90b0;
+  --hud-accent: #e0bbe4;
+  --control-text: #b0a8bd;
+  --kbd-bg: #3a3348;
+  --kbd-border: #5c5270;
+  --kbd-text: #e3d7ee;
+  --btn-bg: #3a3348;
+  --btn-border: #5c5270;
+  --btn-text: #ddd0ea;
+  --btn-active-bg: #e0bbe4;
+  --btn-active-text: #2a2a35;
+  --primary-btn-bg: #b5e7c0;
+  --primary-btn-hover: #cdf3d6;
+  --primary-btn-text: #2a2a35;
+  --overlay-bg: rgba(42, 42, 53, 0.8);
+  --overlay-title: #ffb3b3;
+}
+
+body[data-theme="pixel"] {
+  --page-bg: #0a0a12;
+  --page-text: #d8d8c0;
+  --canvas-bg: #141420;
+  --canvas-border: #4cb944;
+  --canvas-radius: 0px;
+  --label-color: #4cb944;
+  --hud-accent: #ffbf00;
+  --control-text: #8a8a70;
+  --kbd-bg: #1e1e2c;
+  --kbd-border: #4cb944;
+  --kbd-text: #d8d8c0;
+  --btn-bg: #1e1e2c;
+  --btn-border: #4cb944;
+  --btn-text: #d8d8c0;
+  --btn-active-bg: #ffbf00;
+  --btn-active-text: #141420;
+  --primary-btn-bg: #ffbf00;
+  --primary-btn-hover: #ffd54a;
+  --primary-btn-text: #141420;
+  --overlay-bg: rgba(20, 20, 32, 0.85);
+  --overlay-title: #e63946;
+}
+
 body {
-  background: #0f0f17;
-  color: #e0e0e0;
+  background: var(--page-bg);
+  color: var(--page-text);
   font-family: system-ui, -apple-system, sans-serif;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
   user-select: none;
+  transition: background 0.2s, color 0.2s;
+}
+
+body[data-theme="pixel"] {
+  font-family: 'Courier New', Courier, monospace;
 }
 
 .wrapper {
@@ -27,14 +129,17 @@ body {
 
 #board {
   display: block;
-  border: 1px solid #2a2a3a;
-  background: #1a1a25;
-  border-radius: 4px;
+  border: 1px solid var(--canvas-border);
+  background: var(--canvas-bg);
+  border-radius: var(--canvas-radius);
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
 }
 
 /* ---- Panel lateral ---- */
 .panel {
+  /* Above .overlay so the skin selector stays usable while paused / game over. */
+  position: relative;
+  z-index: 2;
   width: 160px;
   display: flex;
   flex-direction: column;
@@ -51,7 +156,7 @@ body {
 .label {
   font-size: 10px;
   letter-spacing: 2px;
-  color: #555570;
+  color: var(--label-color);
   font-weight: 600;
 }
 
@@ -59,15 +164,48 @@ body {
   font-family: 'Courier New', Courier, monospace;
   font-size: 26px;
   font-weight: 700;
-  color: #7aa2f7;
+  color: var(--hud-accent);
   letter-spacing: 1px;
 }
 
 #next-canvas {
   display: block;
-  border: 1px solid #2a2a3a;
-  background: #1a1a25;
+  border: 1px solid var(--canvas-border);
+  background: var(--canvas-bg);
+  border-radius: var(--canvas-radius);
+}
+
+/* ---- Selector de skin ---- */
+.skin-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.skin-btn {
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  color: var(--btn-text);
   border-radius: 4px;
+  padding: 5px 0;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.skin-btn:hover {
+  border-color: var(--hud-accent);
+  color: var(--hud-accent);
+}
+
+.skin-btn.active,
+.skin-btn[aria-pressed="true"] {
+  background: var(--btn-active-bg);
+  border-color: var(--btn-active-bg);
+  color: var(--btn-active-text);
 }
 
 /* ---- Controles ---- */
@@ -80,20 +218,20 @@ body {
 
 .controls li {
   font-size: 12px;
-  color: #888;
+  color: var(--control-text);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 kbd {
-  background: #22223a;
-  border: 1px solid #3a3a5a;
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
   border-radius: 3px;
   padding: 1px 6px;
   font-size: 11px;
   font-family: inherit;
-  color: #aaa;
+  color: var(--kbd-text);
 }
 
 /* ---- Overlay ---- */
@@ -103,7 +241,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 10, 20, 0.75);
+  background: var(--overlay-bg);
   backdrop-filter: blur(4px);
   border-radius: 4px;
 }
@@ -124,13 +262,13 @@ kbd {
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 4px;
-  color: #e57373;
+  color: var(--overlay-title);
 }
 
 #overlay-score {
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
-  color: #7aa2f7;
+  color: var(--hud-accent);
 }
 
 /* ---- Records ---- */
@@ -246,8 +384,8 @@ kbd {
 
 #restart-btn {
   margin-top: 8px;
-  background: #7aa2f7;
-  color: #0f0f17;
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
   border: none;
   border-radius: 6px;
   padding: 10px 28px;
@@ -259,5 +397,5 @@ kbd {
 }
 
 #restart-btn:hover {
-  background: #9bbdff;
+  background: var(--primary-btn-hover);
 }
